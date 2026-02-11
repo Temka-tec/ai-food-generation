@@ -1,310 +1,436 @@
 "use client";
 
-import { MessageCircleMore, Trash } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useState, useRef } from "react";
+import {
+  Sparkles,
+  FileText,
+  RotateCw,
+  Loader2,
+  Image as ImageIcon,
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { pipeline } from "@huggingface/transformers";
+import ChatWidget from "./_components/ChatWidget";
 
-type Tab = "image" | "ingredient" | "creator";
+const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN;
 
-export default function Page() {
-  const tabs = useMemo(
-    () => [
-      { id: "image" as const, label: "Image analysis" },
-      { id: "ingredient" as const, label: "Ingredient recognition" },
-      { id: "creator" as const, label: "Image creator" },
-    ],
-    [],
-  );
+export default function Home() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<Tab>("image");
+  const captionerRef = useRef<any>(null);
 
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [foodText, setFoodText] = useState("");
+  const [ingLoading, setIngLoading] = useState(false);
+  const [ingModelLoading, setIngModelLoading] = useState(false);
+  const [ingResult, setIngResult] = useState<string | null>(null);
 
-  const [ingredientText, setIngredientText] = useState("");
-  const [creatorText, setCreatorText] = useState("");
+  const ingredientRef = useRef<any>(null);
 
-  const clearImage = () => {
-    setImageFile(null);
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setImageUrl(null);
-    if (fileRef.current) fileRef.current.value = "";
-  };
+  const [prompt, setPrompt] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createResultUrl, setCreateResultUrl] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  const resetAll = () => {
-    clearImage();
-    setIngredientText("");
-    setCreatorText("");
-  };
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
-  const onPickFile = (f: File | null) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
     if (!f) return;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setImageFile(f);
-    setImageUrl(URL.createObjectURL(f));
+
+    setSelectedFile(f);
+    setResult(null);
+
+    const dataUrl = await fileToDataUrl(f);
+    setImagePreview(dataUrl);
+  };
+
+  const handleReset = () => {
+    setSelectedFile(null);
+    setImagePreview(null);
+    setResult(null);
+
+    setFoodText("");
+    setIngResult(null);
+
+    setPrompt("");
+    setCreateResultUrl(null);
+    setCreateError(null);
+  };
+
+  const handleGenerate = async () => {
+    if (!imagePreview) return;
+
+    setIsLoading(true);
+    try {
+      if (!captionerRef.current) {
+        setIsModelLoading(true);
+        captionerRef.current = await pipeline(
+          "image-to-text",
+          "Xenova/vit-gpt2-image-captioning",
+        );
+        setIsModelLoading(false);
+      }
+
+      const output = await captionerRef.current(imagePreview);
+
+      if (Array.isArray(output) && output.length > 0) {
+        const caption = (output[0] as { generated_text: string })
+          .generated_text;
+        setResult(caption);
+      }
+    } catch (error) {
+      console.error("Error generating caption:", error);
+      setResult("Error analyzing image. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleIngredientGenerate = async () => {
+    if (!foodText.trim()) return;
+
+    setIngLoading(true);
+    setIngResult(null);
+
+    try {
+      if (!ingredientRef.current) {
+        setIngModelLoading(true);
+        ingredientRef.current = await pipeline(
+          "text2text-generation",
+          "Xenova/flan-t5-base",
+        );
+        setIngModelLoading(false);
+      }
+
+      const promptText =
+        `Extract ingredients as a JSON array.\n` +
+        `Only output JSON.\n` +
+        `Text: "${foodText}"`;
+
+      const out = await ingredientRef.current(promptText);
+
+      const generated = Array.isArray(out)
+        ? (out[0]?.generated_text ?? "")
+        : ((out as { generated_text?: string }).generated_text ?? "");
+
+      setIngResult(generated || "[]");
+    } catch (error) {
+      console.error("Ingredient error:", error);
+      setIngResult("Error extracting ingredients. Please try again.");
+    } finally {
+      setIngLoading(false);
+    }
+  };
+
+  const handleIngredientReset = () => {
+    setFoodText("");
+    setIngResult(null);
+  };
+
+  const handleCreate = async () => {
+    if (!prompt.trim()) return;
+
+    setCreateLoading(true);
+    setCreateResultUrl(null);
+    setCreateError(null);
+
+    try {
+      if (!HF_TOKEN) {
+        setCreateError("Missing NEXT_PUBLIC_HF_TOKEN in .env.local");
+        return;
+      }
+
+      const res = await fetch(
+        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${HF_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        setCreateError(`HF error: ${res.status} ${text}`);
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setCreateResultUrl(url);
+    } catch (e) {
+      console.error(e);
+      setCreateError("Error generating image. Please try again.");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleCreateReset = () => {
+    setPrompt("");
+    setCreateResultUrl(null);
+    setCreateError(null);
   };
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="w-full border-b border-gray-100">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-4">
-          <h1 className="text-sm font-medium text-gray-800">AI tools</h1>
-        </div>
-      </div>
+      <header className="border-b px-6 py-4">
+        <h1 className="text-lg font-semibold">AI tools</h1>
+      </header>
 
-      <div className="mx-auto w-full max-w-[1200px] px-6">
-        <div className="flex justify-center pt-10">
-          <div className="w-full max-w-[820px]">
-            <div className="flex justify-center">
-              <div className="inline-flex rounded-full bg-gray-100 p-1">
-                {tabs.map((t) => {
-                  const active = t.id === tab;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTab(t.id)}
-                      className={[
-                        "px-5 py-2 text-sm rounded-full transition",
-                        active
-                          ? "bg-white shadow-sm text-gray-900"
-                          : "text-gray-400 hover:text-gray-700",
-                      ].join(" ")}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+      <main className="flex justify-center px-6 py-8">
+        <div className="w-full max-w-2xl">
+          <Tabs defaultValue="image-analysis" className="w-full">
+            <TabsList className="mb-6 grid w-full max-w-md mx-auto grid-cols-3">
+              <TabsTrigger value="image-analysis">Image analysis</TabsTrigger>
+              <TabsTrigger value="ingredient-recognition">
+                Ingredient recognition
+              </TabsTrigger>
+              <TabsTrigger value="image-creator">Image creator</TabsTrigger>
+            </TabsList>
 
-            <div className="mt-10 flex items-start justify-between gap-10">
-              <div className="flex-1">
-                {tab === "image" && (
-                  <div>
-                    <Header
-                      title="Image analysis"
-                      subtitle="Upload a food photo, and AI will detect the ingredients."
-                    />
+            <TabsContent value="image-analysis" className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    <h2 className="text-xl font-semibold">Image analysis</h2>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={handleReset}>
+                    <RotateCw className="h-4 w-4" />
+                  </Button>
+                </div>
 
-                    <div className="mt-5">
-                      <button
-                        type="button"
-                        onClick={() => fileRef.current?.click()}
-                        className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-left hover:bg-gray-50"
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className="text-[18px] font-semibold text-gray-900">
-                            Choose File
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            JPG , PNG
-                          </span>
-                        </div>
+                <p className="text-sm text-muted-foreground">
+                  Upload a food photo, and AI will detect the ingredients.
+                </p>
 
-                        {imageFile && (
-                          <p className="mt-2 text-sm text-gray-500">
-                            {imageFile.name}
-                          </p>
-                        )}
-                      </button>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <Label
+                          htmlFor="file-upload"
+                          className="cursor-pointer text-sm font-medium"
+                        >
+                          Choose File
+                        </Label>
+                        <span className="text-sm text-muted-foreground">
+                          {selectedFile ? selectedFile.name : "JPG , PNG"}
+                        </span>
+                        <Input
+                          id="file-upload"
+                          type="file"
+                          accept=".jpg,.jpeg,.png"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </div>
 
-                      <input
-                        ref={fileRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) =>
-                          onPickFile(e.target.files?.[0] ?? null)
-                        }
-                      />
-
-                      {imageUrl && (
+                      {imagePreview && (
                         <div className="mt-4">
-                          <div className="relative inline-block rounded-xl border border-gray-200 bg-white p-1">
-                            <img
-                              src={imageUrl}
-                              alt="preview"
-                              className="h-[110px] w-[210px] rounded-lg object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={clearImage}
-                              className="absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-800 shadow-sm hover:bg-gray-50"
-                              aria-label="Remove image"
-                              title="Remove"
-                            >
-                              <Trash />
-                            </button>
-                          </div>
+                          <img
+                            src={imagePreview}
+                            alt="Preview"
+                            className="max-h-64 rounded-lg object-contain"
+                          />
                         </div>
                       )}
-
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          className={[
-                            "h-11 rounded-md px-6 text-sm font-medium",
-                            imageFile
-                              ? "bg-black text-white"
-                              : "bg-gray-300 text-white",
-                          ].join(" ")}
-                        >
-                          Generate
-                        </button>
-                      </div>
                     </div>
+                  </CardContent>
+                </Card>
 
-                    <SectionCard
-                      icon="📄"
-                      title="Here is the summary"
-                      className="mt-10"
-                    >
-                      <div className="rounded-md border border-gray-200 bg-white px-4 py-3">
-                        <p className="text-base text-gray-500">
-                          First, enter your image to recognize an ingredients.
-                        </p>
-                      </div>
-                    </SectionCard>
-                  </div>
-                )}
-
-                {tab === "ingredient" && (
-                  <div>
-                    <Header
-                      title="Ingredient recognition"
-                      subtitle="Describe the food, and AI will detect the ingredients."
-                    />
-
-                    <div className="mt-5">
-                      <textarea
-                        value={ingredientText}
-                        onChange={(e) => setIngredientText(e.target.value)}
-                        placeholder="Орц тодорхойлох"
-                        className="h-36 w-full resize-none rounded-md border border-gray-200 bg-white p-3 text-base outline-none focus:ring-2 focus:ring-gray-100"
-                      />
-
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          className={[
-                            "h-11 rounded-md px-6 text-sm font-medium text-white",
-                            ingredientText.trim() ? "bg-black" : "bg-gray-300",
-                          ].join(" ")}
-                        >
-                          Generate
-                        </button>
-                      </div>
-                    </div>
-
-                    <SectionCard
-                      icon="📄"
-                      title="Identified Ingredients"
-                      className="mt-10"
-                    >
-                      <p className="text-base text-gray-500">
-                        First, enter your text to recognize an ingredients.
-                      </p>
-                    </SectionCard>
-                  </div>
-                )}
-
-                {tab === "creator" && (
-                  <div>
-                    <Header
-                      title="Food image creator"
-                      subtitle="What food image do you want? Describe it briefly."
-                    />
-
-                    <div className="mt-5">
-                      <textarea
-                        value={creatorText}
-                        onChange={(e) => setCreatorText(e.target.value)}
-                        placeholder="Хоолны тайлбар"
-                        className="h-36 w-full resize-none rounded-md border border-gray-200 bg-white p-3 text-base outline-none focus:ring-2 focus:ring-gray-100"
-                      />
-
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          className={[
-                            "h-11 rounded-md px-6 text-sm font-medium text-white",
-                            creatorText.trim() ? "bg-black" : "bg-gray-300",
-                          ].join(" ")}
-                        >
-                          Generate
-                        </button>
-                      </div>
-                    </div>
-
-                    <SectionCard icon="🖼" title="Result" className="mt-10">
-                      <p className="text-base text-gray-500">
-                        First, enter your text to generate an image.
-                      </p>
-                    </SectionCard>
-                  </div>
-                )}
+                <div className="flex justify-end">
+                  <Button
+                    className="bg-zinc-800 hover:bg-zinc-700"
+                    onClick={handleGenerate}
+                    disabled={!selectedFile || isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {isModelLoading ? "Loading model..." : "Analyzing..."}
+                      </>
+                    ) : (
+                      "Generate"
+                    )}
+                  </Button>
+                </div>
               </div>
 
-              <div className="pt-12">
-                <button
-                  type="button"
-                  onClick={resetAll}
-                  className="inline-flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                  aria-label="Refresh"
-                  title="Refresh"
-                >
-                  ↻
-                </button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  <h3 className="text-lg font-semibold">Here is the summary</h3>
+                </div>
+                {result ? (
+                  <p className="text-sm text-foreground bg-muted p-4 rounded-lg">
+                    {result}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    First, enter your image to recognize an ingredients.
+                  </p>
+                )}
               </div>
-            </div>
-          </div>
+            </TabsContent>
+
+            <TabsContent value="ingredient-recognition" className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    <h2 className="text-xl font-semibold">
+                      Ingredient recognition
+                    </h2>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setFoodText?.("");
+                      setIngResult?.(null);
+                    }}
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Describe the food, and AI will detect the ingredients.
+                </p>
+
+                <div className="rounded-lg border border-gray-200 bg-white">
+                  <textarea
+                    value={foodText}
+                    onChange={(e) => setFoodText(e.target.value)}
+                    placeholder="Орц тодорхойлох"
+                    className="h-[170px] w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    className="bg-zinc-800 hover:bg-zinc-700"
+                    onClick={handleGenerate}
+                    disabled={!selectedFile || isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {isModelLoading ? "Loading model..." : "Analyzing..."}
+                      </>
+                    ) : (
+                      "Generate"
+                    )}
+                  </Button>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">
+                      Identified Ingredients
+                    </h3>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">
+                    First, enter your text to recognize an ingredients.
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="image-creator" className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    <h2 className="text-xl font-semibold">
+                      Food image creator
+                    </h2>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setPrompt?.("");
+                      setCreateResultUrl?.(null);
+                      setCreateError?.(null);
+                    }}
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  What food image do you want? Describe it briefly.
+                </p>
+
+                <div className="rounded-lg border border-gray-200 bg-white">
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Хоолны тайлбар"
+                    className="h-[170px] w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    className="bg-zinc-800 hover:bg-zinc-700"
+                    onClick={handleGenerate}
+                    disabled={!selectedFile || isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {isModelLoading ? "Loading model..." : "Analyzing..."}
+                      </>
+                    ) : (
+                      "Generate"
+                    )}
+                  </Button>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">Result</h3>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">
+                    First, enter your text to generate an image.
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
+      </main>
 
-        <div className="fixed bottom-6 right-6">
-          <button
-            type="button"
-            className="h-12 w-12 rounded-full bg-black text-white shadow-lg hover:opacity-90"
-            aria-label="Chat"
-          >
-            <MessageCircleMore />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Header({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <span className="text-xl">✨</span>
-        <h2 className="text-3xl font-semibold text-gray-900">{title}</h2>
-      </div>
-      <p className="mt-3 text-lg text-gray-500">{subtitle}</p>
-    </div>
-  );
-}
-
-function SectionCard({
-  icon,
-  title,
-  className,
-  children,
-}: {
-  icon: string;
-  title: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={className}>
-      <div className="flex items-center gap-3">
-        <span className="text-2xl">{icon}</span>
-        <h3 className="text-2xl font-semibold text-gray-900">{title}</h3>
-      </div>
-      <div className="mt-3">{children}</div>
+      <ChatWidget />
     </div>
   );
 }
