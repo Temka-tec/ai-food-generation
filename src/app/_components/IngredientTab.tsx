@@ -23,6 +23,8 @@ export default function IngredientTab({
   onReset,
   onGenerate,
 }: Props) {
+
+  
   return (
     <div className="space-y-6">
       <div className="space-y-4">

@@ -87,7 +87,7 @@ export default function ChatWidget() {
           <div className="flex items-center justify-between border-b bg-zinc-800 px-4 py-3 text-white">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
-              <span className="font-semibold">AI Assistant</span>
+              <span className="font-semibold">AI Туслах</span>
             </div>
             <button
               onClick={() => setIsOpen(false)}

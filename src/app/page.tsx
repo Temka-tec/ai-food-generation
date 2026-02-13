@@ -4,7 +4,6 @@ import { useState, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { pipeline } from "@huggingface/transformers";
 import ChatWidget from "./_components/ChatWidget";
-
 import ImageAnalysisTab from "./_components/ImageAnalysisTab";
 import IngredientTab from "./_components/IngredientTab";
 import ImageCreatorTab from "./_components/ImageCreatorTab";
@@ -12,7 +11,7 @@ import ImageCreatorTab from "./_components/ImageCreatorTab";
 const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN;
 
 export default function Home() {
-  // ---------------- IMAGE ANALYSIS ----------------
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,48 +77,54 @@ export default function Home() {
     }
   };
 
-  // ---------------- INGREDIENT ----------------
+
   const [foodText, setFoodText] = useState("");
   const [ingLoading, setIngLoading] = useState(false);
   const [ingModelLoading, setIngModelLoading] = useState(false);
   const [ingResult, setIngResult] = useState<string | null>(null);
   const ingredientRef = useRef<any>(null);
 
-  const handleIngredientGenerate = async () => {
-    if (!foodText.trim()) return;
+const handleIngredientGenerate = async () => {
+  if (!foodText.trim()) return;
 
-    setIngLoading(true);
-    setIngResult(null);
+  setIngLoading(true);
+  setIngResult(null);
 
-    try {
-      if (!ingredientRef.current) {
-        setIngModelLoading(true);
-        ingredientRef.current = await pipeline(
-          "text2text-generation",
-          "Xenova/flan-t5-base",
-        );
-        setIngModelLoading(false);
-      }
+  try {
+    if (!ingredientRef.current) {
+      setIngModelLoading(true);
 
-      const out = await ingredientRef.current(foodText);
-      const text = Array.isArray(out)
-        ? out[0]?.generated_text
-        : out.generated_text;
+      ingredientRef.current = await pipeline(
+        "text2text-generation",
+        "Xenova/flan-t5-base"
+      );
 
-      setIngResult(text || "[]");
-    } catch {
-      setIngResult("Error extracting ingredients.");
-    } finally {
-      setIngLoading(false);
+      setIngModelLoading(false);
     }
-  };
+
+    const out = await ingredientRef.current(
+      `Extract ingredients from this food description as a bullet list:\n${foodText}`
+    );
+
+    const text = Array.isArray(out)
+      ? out[0]?.generated_text
+      : out.generated_text;
+
+    setIngResult(text || "No ingredients found.");
+  } catch (e) {
+    setIngResult("Error extracting ingredients.");
+  } finally {
+    setIngLoading(false);
+  }
+};
+
 
   const handleIngredientReset = () => {
     setFoodText("");
     setIngResult(null);
   };
 
-  // ---------------- IMAGE CREATOR ----------------
+
   const [prompt, setPrompt] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [createResultUrl, setCreateResultUrl] = useState<string | null>(null);
@@ -159,7 +164,7 @@ export default function Home() {
     setCreateError(null);
   };
 
-  // ---------------- UI ----------------
+
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b px-6 py-4">
