@@ -23,8 +23,6 @@ export default function IngredientTab({
   onReset,
   onGenerate,
 }: Props) {
-
-  
   return (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -58,14 +56,7 @@ export default function IngredientTab({
             onClick={onGenerate}
             disabled={!foodText.trim() || ingLoading}
           >
-            {ingLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {ingModelLoading ? "Loading model..." : "Generating..."}
-              </>
-            ) : (
-              "Generate"
-            )}
+            Generate
           </Button>
         </div>
       </div>

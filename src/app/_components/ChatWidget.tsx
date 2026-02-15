@@ -101,9 +101,9 @@ export default function ChatWidget() {
             {messages.length === 0 && (
               <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
                 <p>
-                  👋 Hi! How can I help you today?
+                  👋 Сайн байна уу! Би танд юугаар туслах вэ?
                   <br />
-                  Ask me anything about food or ingredients!
+                  Хоол эсвэл орц найрлагын талаар надаас юу ч асууж болно!
                 </p>
               </div>
             )}

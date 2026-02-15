@@ -11,7 +11,7 @@ import ImageCreatorTab from "./_components/ImageCreatorTab";
 const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN;
 
 export default function Home() {
-
+  // ---------------- IMAGE ANALYSIS ----------------
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,19 +38,6 @@ export default function Home() {
     setImagePreview(dataUrl);
   };
 
-  const handleReset = () => {
-    setSelectedFile(null);
-    setImagePreview(null);
-    setResult(null);
-
-    setFoodText("");
-    setIngResult(null);
-
-    setPrompt("");
-    setCreateResultUrl(null);
-    setCreateError(null);
-  };
-
   const handleGenerate = async () => {
     if (!imagePreview) return;
 
@@ -66,7 +53,6 @@ export default function Home() {
       }
 
       const output = await captionerRef.current(imagePreview);
-
       if (Array.isArray(output) && output.length > 0) {
         setResult(output[0].generated_text);
       }
@@ -77,53 +63,44 @@ export default function Home() {
     }
   };
 
-
+  // ---------------- INGREDIENT RECOGNITION ----------------
   const [foodText, setFoodText] = useState("");
   const [ingLoading, setIngLoading] = useState(false);
   const [ingModelLoading, setIngModelLoading] = useState(false);
   const [ingResult, setIngResult] = useState<string | null>(null);
   const ingredientRef = useRef<any>(null);
 
-const handleIngredientGenerate = async () => {
-  if (!foodText.trim()) return;
+  const handleIngredientGenerate = async () => {
+    if (!foodText.trim()) return;
 
-  setIngLoading(true);
-  setIngResult(null);
+    setIngLoading(true);
+    setIngResult(null);
 
-  try {
-    if (!ingredientRef.current) {
-      setIngModelLoading(true);
+    try {
+      if (!ingredientRef.current) {
+        setIngModelLoading(true);
+        ingredientRef.current = await pipeline(
+          "text2text-generation",
+          "Xenova/flan-t5-base",
+        );
+        setIngModelLoading(false);
+      }
 
-      ingredientRef.current = await pipeline(
-        "text2text-generation",
-        "Xenova/flan-t5-base"
+      const out = await ingredientRef.current(
+        `Extract ingredients from this food description as a bullet list:\n${foodText}`,
       );
 
-      setIngModelLoading(false);
+      const text = Array.isArray(out)
+        ? out[0]?.generated_text
+        : out.generated_text;
+
+      setIngResult(text || "No ingredients found.");
+    } catch {
+      setIngResult("Error extracting ingredients.");
+    } finally {
+      setIngLoading(false);
     }
-
-    const out = await ingredientRef.current(
-      `Extract ingredients from this food description as a bullet list:\n${foodText}`
-    );
-
-    const text = Array.isArray(out)
-      ? out[0]?.generated_text
-      : out.generated_text;
-
-    setIngResult(text || "No ingredients found.");
-  } catch (e) {
-    setIngResult("Error extracting ingredients.");
-  } finally {
-    setIngLoading(false);
-  }
-};
-
-
-  const handleIngredientReset = () => {
-    setFoodText("");
-    setIngResult(null);
   };
-
 
   const [prompt, setPrompt] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
@@ -131,40 +108,50 @@ const handleIngredientGenerate = async () => {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    if (!prompt.trim() || !HF_TOKEN) return;
+    if (!prompt.trim()) return;
 
     setCreateLoading(true);
     setCreateError(null);
+    setCreateResultUrl(null);
 
     try {
-      const res = await fetch(
-        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${HF_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ inputs: prompt }),
-        },
-      );
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task: "image",
+          prompt,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data?.error || "Generate failed");
+      }
 
       const blob = await res.blob();
       setCreateResultUrl(URL.createObjectURL(blob));
-    } catch {
-      setCreateError("Image generation error.");
+    } catch (e: any) {
+      setCreateError(e.message || "Failed to fetch");
     } finally {
       setCreateLoading(false);
     }
   };
 
-  const handleCreateReset = () => {
+  const handleReset = () => {
+    setSelectedFile(null);
+    setImagePreview(null);
+    setResult(null);
+
+    setFoodText("");
+    setIngResult(null);
+
     setPrompt("");
     setCreateResultUrl(null);
     setCreateError(null);
   };
 
-
+  // ---------------- UI ----------------
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b px-6 py-4">
@@ -202,7 +189,10 @@ const handleIngredientGenerate = async () => {
                 ingModelLoading={ingModelLoading}
                 ingResult={ingResult}
                 onChange={setFoodText}
-                onReset={handleIngredientReset}
+                onReset={() => {
+                  setFoodText("");
+                  setIngResult(null);
+                }}
                 onGenerate={handleIngredientGenerate}
               />
             </TabsContent>
@@ -214,7 +204,11 @@ const handleIngredientGenerate = async () => {
                 createResultUrl={createResultUrl}
                 createError={createError}
                 onChange={setPrompt}
-                onReset={handleCreateReset}
+                onReset={() => {
+                  setPrompt("");
+                  setCreateResultUrl(null);
+                  setCreateError(null);
+                }}
                 onGenerate={handleCreate}
               />
             </TabsContent>
