@@ -6,12 +6,11 @@ import { pipeline } from "@huggingface/transformers";
 import ChatWidget from "./_components/ChatWidget";
 import ImageAnalysisTab from "./_components/ImageAnalysisTab";
 import IngredientTab from "./_components/IngredientTab";
-import ImageCreatorTab from "./_components/ImageCreatorTab";
+import { ImageCreatorTab } from "./_components/ImageCreatorTab";
 
 const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN;
 
 export default function Home() {
-  // ---------------- IMAGE ANALYSIS ----------------
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +62,6 @@ export default function Home() {
     }
   };
 
-  // ---------------- INGREDIENT RECOGNITION ----------------
   const [foodText, setFoodText] = useState("");
   const [ingLoading, setIngLoading] = useState(false);
   const [ingModelLoading, setIngModelLoading] = useState(false);
@@ -151,7 +149,6 @@ export default function Home() {
     setCreateError(null);
   };
 
-  // ---------------- UI ----------------
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b px-6 py-4">
@@ -198,19 +195,7 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="image-creator">
-              <ImageCreatorTab
-                prompt={prompt}
-                createLoading={createLoading}
-                createResultUrl={createResultUrl}
-                createError={createError}
-                onChange={setPrompt}
-                onReset={() => {
-                  setPrompt("");
-                  setCreateResultUrl(null);
-                  setCreateError(null);
-                }}
-                onGenerate={handleCreate}
-              />
+              <ImageCreatorTab />
             </TabsContent>
           </Tabs>
         </div>

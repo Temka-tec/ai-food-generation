@@ -85,8 +85,9 @@ export async function POST(request: NextRequest) {
         model: "gemini-2.0-flash",
         history: [],
         config: {
-          systemInstruction:
-            "You extract ingredients from food descriptions. Return ONLY a clean bullet list of ingredients. No extra text.",
+          systemInstruction: `You are a helpful assistant that extracts ingredients from food descriptions.
+            Choose the best format based on the user's question.:
+            -if it is "how to" question: use number steps.`,
         },
       });
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
     const lastMessage = messages[messages.length - 1];
 
     const chat = ai.chats.create({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       history,
       config: {
         systemInstruction:
