@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
@@ -13,6 +13,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const task = body?.task ?? "chat";
 
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured" },
+        { status: 500 },
+      );
+    }
+
+    const openai = new OpenAI({ apiKey: openaiKey });
+
+    // ---------------- IMAGE GENERATION (Hugging Face) ----------------
     if (task === "image") {
       const prompt = (body?.prompt ?? "").trim();
       if (!prompt) {
@@ -27,11 +38,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const finalPrompt = `professional food photography of ${prompt}, realistic, high quality, studio lighting, 4k`;
+      const finalPrompt = `professional food photography of ${prompt}, realistic, high quality, studio lighting, 4k, detailed`;
 
       const res = await fetch(
         "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-2-1",
-
         {
           method: "POST",
           headers: {
@@ -52,52 +62,58 @@ export async function POST(request: NextRequest) {
         const errText = ct.includes("application/json")
           ? JSON.stringify(await res.json())
           : await res.text();
-
         return NextResponse.json(
-          { error: `HF error ${res.status}: ${errText}` },
+          { error: `HF error ${res.status}: ${errText || "Empty error body"}` },
+          { status: res.status },
+        );
+      }
+
+      if (!ct.startsWith("image/")) {
+        const text = ct.includes("application/json")
+          ? JSON.stringify(await res.json())
+          : await res.text();
+        return NextResponse.json(
+          { error: `HF returned non-image (${ct}): ${text || "Empty body"}` },
           { status: 500 },
         );
       }
 
       const arrayBuffer = await res.arrayBuffer();
       return new NextResponse(arrayBuffer, {
-        headers: { "Content-Type": ct || "image/png" },
+        headers: { "Content-Type": ct },
       });
     }
 
+    // ---------------- INGREDIENT EXTRACTION (OpenAI) ----------------
     if (task === "ingredients") {
       const text = body?.text;
       if (!text || typeof text !== "string") {
         return NextResponse.json({ error: "Missing 'text'" }, { status: 400 });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "GEMINI_API_KEY is not configured" },
-          { status: 500 },
-        );
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-
-      const chat = ai.chats.create({
-        model: "gemini-2.0-flash",
-        history: [],
-        config: {
-          systemInstruction: `You are a helpful assistant that extracts ingredients from food descriptions.
-            Choose the best format based on the user's question.:
-            -if it is "how to" question: use number steps.`,
-        },
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You extract ingredients from food descriptions.
+Return ONLY a clean bullet list of ingredients.
+No extra text, no explanations, no numbering.`,
+          },
+          {
+            role: "user",
+            content: `Food description:\n${text}\n\nExtract ingredients:`,
+          },
+        ],
+        max_tokens: 500,
       });
 
-      const response = await chat.sendMessage({
-        message: `Food description: ${text}\n\nExtract ingredients:`,
+      return NextResponse.json({
+        message: response.choices[0]?.message?.content ?? "",
       });
-
-      return NextResponse.json({ message: response.text ?? "" });
     }
 
+    // ---------------- GENERAL CHAT (OpenAI) ----------------
     const { messages } = body as { messages: Message[] };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -107,37 +123,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY is not configured" },
-        { status: 500 },
-      );
-    }
+    const systemPrompt = `You are a helpful food assistant. Always reply in clean Markdown.
 
-    const ai = new GoogleGenAI({ apiKey });
+Choose the best format based on the user's question:
+- If it is a "how-to" question: use numbered steps.
+- If it is a comparison: use a short table or bullet comparison.
+- If it is troubleshooting: use sections titled "Cause", "Solution", and "Checks".
+- If it is a definition: give a one-line definition plus two short examples.
 
-    const history = messages.slice(0, -1).map((msg: Message) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    }));
+Constraints:
+- Be concise and avoid long essays.
+- Do not add unnecessary filler text.
+- If the question is unclear, ask at most ONE short clarifying question at the end.
+- You can answer in Mongolian if the user writes in Mongolian.`;
 
-    const lastMessage = messages[messages.length - 1];
+    const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((msg) => ({
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
+      })),
+    ];
 
-    const chat = ai.chats.create({
-      model: "gemini-2.5-flash",
-      history,
-      config: {
-        systemInstruction:
-          "You are a helpful assistant. Provide concise, helpful responses.",
-      },
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: openaiMessages,
+      max_tokens: 1000,
     });
 
-    const response = await chat.sendMessage({
-      message: lastMessage.content,
+    return NextResponse.json({
+      message: response.choices[0]?.message?.content ?? "",
     });
-
-    return NextResponse.json({ message: response.text ?? "" });
   } catch (error: any) {
     console.error("Error in chat API:", error);
     return NextResponse.json(

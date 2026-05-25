@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 
 type Props = {
-  // API endpoint-оо өөр болгох бол override хийж болно
-  endpoint?: string; // default: "/api/image-generation"
+  endpoint?: string;
 };
 
 export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
@@ -15,7 +14,6 @@ export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // objectURL leak-ээс сэргийлнэ
   useEffect(() => {
     return () => {
       if (generatedImage) URL.revokeObjectURL(generatedImage);
@@ -29,7 +27,6 @@ export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
     setIsGenerating(true);
     setError(null);
 
-    // өмнөх зургийн objectURL-ийг цэвэрлэх
     if (generatedImage) {
       URL.revokeObjectURL(generatedImage);
       setGeneratedImage(null);
@@ -42,7 +39,6 @@ export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
         body: JSON.stringify({ prompt: trimmed }),
       });
 
-      // сервер алдаа (json) буцааж магадгүй
       const ct = res.headers.get("content-type") || "";
       if (!res.ok) {
         const msg = ct.includes("application/json")
@@ -51,7 +47,6 @@ export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
         throw new Error(msg || `Request failed (${res.status})`);
       }
 
-      // image blob
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       setGeneratedImage(url);
