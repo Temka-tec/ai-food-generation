@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     const openai = new OpenAI({ apiKey: openaiKey });
 
-    // ---------------- IMAGE GENERATION (Hugging Face) ----------------
+
     if (task === "image") {
       const prompt = (body?.prompt ?? "").trim();
       if (!prompt) {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ---------------- INGREDIENT EXTRACTION (OpenAI) ----------------
+
     if (task === "ingredients") {
       const text = body?.text;
       if (!text || typeof text !== "string") {
