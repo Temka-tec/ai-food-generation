@@ -93,7 +93,7 @@ export function ImageCreatorTab({ endpoint = "/api/image-generation" }: Props) {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Хоолны тайлбар"
-            className="h-[170px] w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
+            className="h-42.5 w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
           />
         </div>
 

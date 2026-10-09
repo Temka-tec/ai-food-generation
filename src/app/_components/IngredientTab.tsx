@@ -46,7 +46,7 @@ export default function IngredientTab({
             value={foodText}
             onChange={(e) => onChange(e.target.value)}
             placeholder="Орц тодорхойлох"
-            className="h-[170px] w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
+            className="h-42.5 w-full resize-none rounded-lg bg-transparent p-4 text-base outline-none placeholder:text-gray-400"
           />
         </div>
 
